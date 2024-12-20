@@ -1,0 +1,18 @@
+#Cactus Monitoring Device Parts
+
+
+Cactus voltage: 26 AWG wire inserted into the chlorenchyma (layer with chloroplasts & photosynthetic activity site) of the light-facing stem side
+
+Cactus current: 26 AWG wire with 2 ohm resistance connected to the cactus voltage wire
+
+Cactus ground: 26 AWG wire inserted into the chlorenchyma (layer with chloroplasts & photosynthetic activity site) of the shaded stem side
+
+pH: Atlas Scientific Mini Lab Grade pH probe attached to the EZO pH circuit inserted into the Isolated Carrier Board. The pH probes are embedded into each side of the stem's chlorenchyma
+
+Light sensors: Custom designed PAR sensors by Ben Cooper (see PAR sensors)
+
+Micro SD card holder: Micro SD Card Adapter Reader Module with SPI interface 
+
+Real Time Clock: AITRIP DS3231 Real Time Clock module 
+
+Microcontroller: Adafruit Metro ESP32-S2, connected to Google Sheets for real time data monitoring
