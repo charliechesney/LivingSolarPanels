@@ -1,0 +1,280 @@
+// Cactus voltage & Current //
+// 2 Light Sensors //
+// 2 pH probes //
+// Saving to both SD card and Google Sheets //
+// Time is from RTC //
+
+// Comment out all Serial when deployed
+
+//-------- Library Stuff ---------//
+// include the pH libraries:
+#include <Wire.h>
+#include <Arduino.h>
+
+// include the SD & RTC libraries:
+#include <RTClib.h>
+#include <SPI.h>
+#include <SD.h>
+
+// include the WiFi libraries:
+#include <WiFi.h>
+
+// include the Google Sheets libraries:
+#include <ESP_Google_Sheet_Client.h>
+#include <ESP_Google_Sheet_Client_FS_Config.h>
+#include <GS_Const.h>
+#include <GS_ESP8266_Supports.h>
+#include <GS_Error.h>
+#include <GS_Helper.h>
+#include <GS_Network.h>
+#include <GS_SDHelper.h>
+
+//-------- pH stuff --------------//
+// TX -> SDA
+// RX -> SCL
+#define EZO_PH_I2C_ADDRESS_1 0x64 // Address 100 in hexadecimal
+#define EZO_PH_I2C_ADDRESS_2 0x63 // Address 99 in hexadecimal
+
+//-------- SD Card Stuff ---------//
+// Check RTC on your device:
+//RTC_DS3231 rtc;
+RTC_PCF8523 rtc;
+File myFile;
+const int chipselect = 5;
+
+//-------- WiFi & Google Sheet Stuff ---------//
+#define WIFI_SSID "" //WiFi name
+#define WIFI_PASS "" //WiFi password
+#define PROJECT_ID "" //For Project_ID, Client_email, Private_Key, & spreadsheetID, see: https://randomnerdtutorials.com/esp32-datalogging-google-sheets/
+#define CLIENT_EMAIL ""
+const char PRIVATE_KEY[] PROGMEM = ""
+const char spreadsheetId[] = "";
+void tokenStatusCallback(TokenInfo info);
+
+//-------- Voltage Stuff ---------//
+// number of iterations for average calculation
+#define avgIter 10000
+// recordings / min
+#define freq 1
+// delay offset
+#define offset 150
+
+//-------- Setup ---------//
+void setup() {
+  // Open wire communications with pH probes
+  Wire.begin();
+  // Open serial communications and wait for port to open:
+  Serial.begin(115200);
+  // Begin pH sensor connection
+  initializeSensor(EZO_PH_I2C_ADDRESS_1);
+  initializeSensor(EZO_PH_I2C_ADDRESS_2);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+
+
+ // Initialize the RTC
+rtc.begin();
+
+  // Check for SD Card
+Serial.print("\nInitializing SD card...");
+SPI.begin(36, 37, 35, chipselect);  
+// Comment out the following when deployed
+  if (!SD.begin(chipselect)) {
+    Serial.println("initialization failed. Things to check:");
+    Serial.println("* is a card inserted?");
+    Serial.println("* is your wiring correct?");
+    Serial.println("* did you change the chipSelect pin to match your shield or module?");
+    while (1);
+  } else {
+    Serial.println("Wiring is correct and a card is present.");
+  }
+   // open SD card file
+  myFile = SD.open("/NAME.txt", FILE_APPEND); //CHANGE FILE NAME HERE, max 8 characters
+    // if the file opened okay, write to it:
+  if (myFile) {
+    Serial.print("Opened file");
+    // Set column names
+    myFile.print("DateTime");
+    myFile.print(",");
+    myFile.print("Voltage (mV)");
+    myFile.print(",");
+    myFile.print("Voltage_2ohmresistance (mV)");
+    myFile.print(",");
+    myFile.print("Voltagedrop (mV)");
+    myFile.print(",");
+    myFile.println("Current (mA)");
+    myFile.print(",");
+    myFile.println("pH Value 1");
+    myFile.print(",");
+    myFile.println("pH Value 2");
+    myFile.print(",");
+    myFile.println("Light Sensor 1 (mV)");
+    myFile.print(",");
+    myFile.println("Light Sensor 2 (mV)");
+  } else {
+    // if the file didn't open, print an error:
+    Serial.println("Error opening file");
+ }
+ myFile.close();
+
+  // Google Sheets Setup
+  GSheet.printf("ESP Google Sheet Client v%s\n\n", ESP_GOOGLE_SHEET_CLIENT_VERSION);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  GSheet.setTokenCallback(tokenStatusCallback);
+  GSheet.setPrerefreshSeconds(10 * 60);
+  GSheet.begin(CLIENT_EMAIL, PROJECT_ID, PRIVATE_KEY);
+}
+
+//-------- pH probe set-up--------//
+void initializeSensor(uint8_t address) {
+  Wire.beginTransmission(address);
+  Wire.endTransmission();
+  delay(1000); // Wait for sensor initialization (adjust if needed)
+}
+
+float readPH(uint8_t address) {
+  Wire.beginTransmission(address);
+  Wire.write('R');
+  Wire.endTransmission();
+  delay(1000); // Wait for sensor reading (adjust if needed)
+
+  Wire.requestFrom(address, (uint8_t)20); // Explicit cast to uint8_t
+  byte data[20];
+  int dataIndex = 0;
+  while (Wire.available() && dataIndex < 20) {
+    data[dataIndex++] = Wire.read();
+  }
+  
+  return parsePHValue(data, dataIndex);
+}
+
+float parsePHValue(byte* data, int length) {
+  char pHStr[8];
+  int pHIndex = 0;
+  bool pHStarted = false;
+  bool decimalPointFound = false;
+
+  for (int i = 0; i < length; i++) {
+    if (isdigit(data[i])) {
+      pHStr[pHIndex++] = (char)data[i];
+      pHStarted = true;
+    } else if (data[i] == '.' && !decimalPointFound) {
+      pHStr[pHIndex++] = '.';
+      decimalPointFound = true;
+      pHStarted = true;
+    } else if (pHStarted) {
+      break;
+    }
+  }
+  pHStr[pHIndex] = '\0';
+  return atof(pHStr);
+}
+
+
+//-------- Loop ---------//
+void loop() {
+// Time stuff
+DateTime now = rtc.now(); 
+char timestamp[20]; 
+snprintf(timestamp, sizeof(timestamp), "%04d/%02d/%02d %02d:%02d:%02d", now.year(), now.month(), now.day(), now.hour(), now.minute(), now.second()); 
+Serial.println(timestamp);
+
+// Voltage stuff
+  unsigned long start = millis();
+  float voltage = 0;
+  float voltagewithresistance = 0;
+  float lightsensor1 = 0;
+  float lightsensor2 = 0;
+
+  for (int i = 0; i < avgIter; i++) {
+    voltage += analogReadMilliVolts(A0);
+    voltagewithresistance += analogReadMilliVolts(A1);
+    lightsensor1 += analogReadMilliVolts(A4);
+    lightsensor2 += analogReadMilliVolts(A5);
+  }
+
+  voltage /= avgIter;
+  voltagewithresistance /= avgIter;
+  lightsensor1 /= avgIter;
+  lightsensor2 /= avgIter;
+  float voltagedrop = voltage-voltagewithresistance;
+  float current = 2*voltagedrop; //change total resistor value here (2 = 2ohm = 2000 milli ohm)
+
+  // Read pH probes
+  float pHValue1 = readPH(EZO_PH_I2C_ADDRESS_1);
+delay(500);
+  float pHValue2 = readPH(EZO_PH_I2C_ADDRESS_2);
+
+    // Get ready Google Sheets
+  bool ready = GSheet.ready();
+  FirebaseJson response;
+//  Serial.println("\nAppend spreadsheet values...");
+//  Serial.println("----------------------------");
+  FirebaseJson valueRange;
+  valueRange.add("majorDimension", "COLUMNS");
+  
+  // Share to Google Sheets
+  valueRange.set("values/[0]/[0]", timestamp);
+  valueRange.set("values/[1]/[0]", voltage);
+  valueRange.set("values/[2]/[0]", voltagewithresistance);
+  valueRange.set("values/[3]/[0]", voltagedrop);
+  valueRange.set("values/[4]/[0]", current);
+  valueRange.set("values/[5]/[0]", pHValue1);
+  valueRange.set("values/[6]/[0]", pHValue2);
+  valueRange.set("values/[7]/[0]", lightsensor1);
+  valueRange.set("values/[8]/[0]", lightsensor2);
+
+
+  // What sheet to send data to - change to Sheet1 in Sheet1!A1 to the tab name in your Google Sheet. If using multiple devices to send data to same Google Sheet, make sure each tab has a different name
+  bool success = GSheet.values.append(&response /* returned response */, spreadsheetId /* spreadsheet Id to append */, "Sheet1!A1" /* range to append */, &valueRange /* data range to append */);
+        if (success){
+            response.toString(Serial, true);
+            valueRange.clear();
+        }
+        else{
+            Serial.println(GSheet.errorReason());
+        }
+        Serial.println();
+        Serial.println(ESP.getFreeHeap());
+  
+  //Open SD card file   
+  myFile = SD.open("/NAME.txt", FILE_APPEND); // Change file name here
+  //Write to SD card
+  myFile.print(timestamp);
+  myFile.print(",");
+  myFile.print(voltage);
+  myFile.print(",");
+  myFile.print(voltagewithresistance);
+  myFile.print(",");
+  myFile.print(voltagedrop);
+  myFile.print(",");
+  myFile.println(current);
+  myFile.print(",");
+  myFile.println(pHValue1);
+  myFile.print(",");
+  myFile.println(pHValue2);
+  myFile.print(",");
+  myFile.println(lightsensor1);
+  myFile.print(",");
+  myFile.println(lightsensor2);
+
+  // Close SD card file
+  myFile.close();
+
+  // Delay
+  delay(48000);
+
+}
+
+// More Google Sheets stuff
+void tokenStatusCallback(TokenInfo info){
+    if (info.status == token_status_error){
+        GSheet.printf("Token info: type = %s, status = %s\n", GSheet.getTokenType(info).c_str(), GSheet.getTokenStatus(info).c_str());
+        GSheet.printf("Token error: %s\n", GSheet.getTokenError(info).c_str());
+    }
+    else{
+        GSheet.printf("Token info: type = %s, status = %s\n", GSheet.getTokenType(info).c_str(), GSheet.getTokenStatus(info).c_str());
+    }
+}
