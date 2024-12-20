@@ -15,7 +15,11 @@ We have designed:
 - A low-cost microweather station
 
 For more information:
+
 https://sites.google.com/ucsc.edu/living-solar-panels/home
+
 Instagram: @livingsolarpanels
+
 Facebook: @livingsolarpanels
+
 X: @OpuntiaEnergy
