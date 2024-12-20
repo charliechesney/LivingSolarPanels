@@ -1,0 +1,33 @@
+// Use non ESP microcontroller (like an Adafruit Metro or Arduino Uno)
+
+#include <SoftwareSerial.h>
+
+SoftwareSerial mySerial(A4, A5); // RX,TX
+
+void setup() {
+  // Start the serial communication with the computer
+  Serial.begin(9600);
+  while (!Serial); // wait for the serial port to connect
+
+  // Start the serial communication with the EZO pH circuit
+  mySerial.begin(9600);
+  delay(1000); // wait for the EZO pH circuit to initialize
+
+  // Send the command to change the I2C address
+  mySerial.print("I2C,100\r"); // Change the 100 to whatever you want it to be - If using >1 pH probe on the same microcontroller, the address must be different. Default is 99. 
+  delay(300); // wait for the command to be processed
+
+  // Read any response from the EZO pH circuit
+  while (mySerial.available()) {
+    char c = mySerial.read();
+    Serial.write(c); // output the response to the serial monitor
+  }
+
+  // Indicate that the address change is complete
+  Serial.println("I2C address change complete.");
+}
+
+void loop() {
+  // Nothing to do here
+}
+
