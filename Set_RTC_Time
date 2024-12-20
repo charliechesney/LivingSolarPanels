@@ -1,0 +1,54 @@
+#include <Wire.h>
+#include <RTClib.h>
+#include <SPI.h>
+#include <SD.h>
+
+// Your RTC
+RTC_DS3231 rtc;
+//RTC_PCF8523 rtc;
+File myFile;
+
+const int chipselect = 5; // CS pin for SD card module
+
+void setup() {
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600);
+  while (!Serial) {
+    delay(10); // wait for serial port to connect. Needed for native USB port only
+  }
+
+  // Initialize the RTC
+  if (!rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+    while (1);
+  }
+
+    rtc.adjust(DateTime(2024, 12, 16, 12, 17, 20)); // Y, M, D, H, M, S - Set to specific date & time; it takes 40 seconds to compile and send to microcontroller
+
+  // Initialize the SD card
+  SPI.begin(36, 37, 35, chipselect);
+
+}
+
+void loop() {
+  // Get the current time from the RTC
+  DateTime now = rtc.now();
+
+  // Print the current time
+  Serial.print("Current time: ");
+  Serial.print(now.year(), DEC);
+  Serial.print('/');
+  Serial.print(now.month(), DEC);
+  Serial.print('/');
+  Serial.print(now.day(), DEC);
+  Serial.print(" ");
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println();
+
+  // Wait for 10 seconds
+  delay(10000);
+}
